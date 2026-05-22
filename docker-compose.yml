@@ -1,0 +1,58 @@
+# Local development infrastructure for AI Chat.
+# Only spins up PostgreSQL, Redis and (optional) MinIO.
+# The Go API/worker and Next.js web app run on the host during development.
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aichat_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aichat
+      POSTGRES_PASSWORD: aichat
+      POSTGRES_DB: aichat
+    ports:
+      - "5432:5432"
+    volumes:
+      - aichat_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aichat"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: aichat_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - aichat_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Optional object storage. Disable if you use local VPS storage only.
+  minio:
+    image: minio/minio:latest
+    container_name: aichat_minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: aichat
+      MINIO_ROOT_PASSWORD: aichat-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - aichat_miniodata:/data
+
+volumes:
+  aichat_pgdata:
+  aichat_redisdata:
+  aichat_miniodata:

@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# next.js
+apps/web/.next/
+apps/web/out/
+apps/web/next-env.d.ts
+
+# build output
+dist/
+build/
+apps/api/bin/
+apps/worker/bin/
+
+# go
+*.exe
+*.test
+*.out
+vendor/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# storage / uploads
+apps/api/storage/
+storage/
+
+# logs
+*.log
+logs/
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+Thumbs.db

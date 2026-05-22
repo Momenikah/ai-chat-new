@@ -1,0 +1,19 @@
+{
+  "name": "aichat-omni",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Chat - Omnichannel CRM SaaS Platform",
+  "workspaces": [
+    "apps/web",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "build:web": "pnpm --filter web build",
+    "lint:web": "pnpm --filter web lint"
+  },
+  "packageManager": "pnpm@9.7.0",
+  "engines": {
+    "node": ">=20"
+  }
+}
