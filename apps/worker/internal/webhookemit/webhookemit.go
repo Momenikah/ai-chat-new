@@ -41,9 +41,10 @@ type Emitter struct {
 	client *http.Client
 }
 
-// New constructs an Emitter.
-func New(pool *pgxpool.Pool) *Emitter {
-	return &Emitter{pool: pool, client: &http.Client{Timeout: 15 * time.Second}}
+// New constructs an Emitter. Unless allowPrivate is set, deliveries to
+// loopback / private-network addresses are refused (SSRF protection).
+func New(pool *pgxpool.Pool, allowPrivate bool) *Emitter {
+	return &Emitter{pool: pool, client: newHTTPClient(15*time.Second, allowPrivate)}
 }
 
 type envelope struct {

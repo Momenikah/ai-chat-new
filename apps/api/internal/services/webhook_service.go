@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aichat/api/internal/models"
+	"github.com/aichat/api/internal/netguard"
 	"github.com/aichat/api/internal/repositories"
 	"github.com/aichat/api/internal/webhook"
 )
@@ -19,6 +20,7 @@ var (
 	ErrWebhookNotFound   = errors.New("webhook endpoint not found")
 	ErrInvalidWebhookURL = errors.New("webhook url must be a valid http(s) url")
 	ErrInvalidEvent      = errors.New("unknown webhook event")
+	ErrPrivateWebhookURL = errors.New("webhook url must point to a public host")
 )
 
 // WebhookService manages outbound webhook endpoints + exposes the
@@ -27,6 +29,10 @@ type WebhookService struct {
 	endpoints  *repositories.WebhookEndpointRepository
 	dispatcher webhook.Dispatcher
 	plan       PlanEnforcer
+
+	// allowPrivate permits endpoint URLs on loopback/private networks
+	// (e.g. a local n8n). Off by default; see netguard.
+	allowPrivate bool
 }
 
 // NewWebhookService constructs a WebhookService.
@@ -39,6 +45,10 @@ func NewWebhookService(repo *repositories.WebhookEndpointRepository, dispatcher 
 
 // SetPlanEnforcer wires plan-feature enforcement. Optional (nil = allow).
 func (s *WebhookService) SetPlanEnforcer(p PlanEnforcer) { s.plan = p }
+
+// SetAllowPrivateTargets permits webhook URLs that point at loopback or
+// private-network hosts. Only enable this for local development.
+func (s *WebhookService) SetAllowPrivateTargets(allow bool) { s.allowPrivate = allow }
 
 // CreateWebhookInput is the payload for registering an endpoint.
 type CreateWebhookInput struct {
@@ -59,7 +69,7 @@ func (s *WebhookService) Create(ctx context.Context, in CreateWebhookInput) (*mo
 	if err := ensureFeature(s.plan, ctx, in.WorkspaceID, FeatureN8N); err != nil {
 		return nil, err
 	}
-	if err := validateURL(in.URL); err != nil {
+	if err := s.validateURL(in.URL); err != nil {
 		return nil, err
 	}
 	if err := validateEvents(in.Events); err != nil {
@@ -98,7 +108,7 @@ type UpdateWebhookInput struct {
 
 // Update saves edits to an endpoint.
 func (s *WebhookService) Update(ctx context.Context, in UpdateWebhookInput) (*models.WebhookEndpoint, error) {
-	if err := validateURL(in.URL); err != nil {
+	if err := s.validateURL(in.URL); err != nil {
 		return nil, err
 	}
 	if err := validateEvents(in.Events); err != nil {
@@ -178,10 +188,15 @@ func (s *WebhookService) Test(ctx context.Context, workspaceID, endpointID strin
 
 /* ----------------------------- validation ----------------------------- */
 
-func validateURL(raw string) error {
+func (s *WebhookService) validateURL(raw string) error {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return ErrInvalidWebhookURL
+	}
+	if !s.allowPrivate {
+		if err := netguard.ValidateURL(raw); err != nil {
+			return ErrPrivateWebhookURL
+		}
 	}
 	return nil
 }

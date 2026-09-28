@@ -1,7 +1,10 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"log"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -65,6 +68,26 @@ type Config struct {
 	WebhookWorkers        int
 	WebhookQueueSize      int
 
+	// WebhookAllowPrivateTargets lets outbound webhooks reach loopback /
+	// private-network hosts (e.g. a local n8n). Defaults to true only in
+	// development; production blocks them to prevent SSRF.
+	WebhookAllowPrivateTargets bool
+
+	// Brute-force protection for /auth endpoints (Redis-backed).
+	// AuthIPRatePerMinute caps login+register requests per client IP;
+	// LoginMaxFailures caps failed logins per email within
+	// LoginFailureWindow. Zero disables the respective limit.
+	AuthIPRatePerMinute int
+	LoginMaxFailures    int
+	LoginFailureWindow  time.Duration
+
+	// MaxBodySize caps request bodies (Echo BodyLimit syntax, e.g. "10M").
+	MaxBodySize string
+
+	// TrustedProxies lists extra CIDRs (beyond loopback/private ranges)
+	// whose X-Forwarded-For is trusted, e.g. a CDN in front of the API.
+	TrustedProxies []*net.IPNet
+
 	// Midtrans payment gateway (Part 11). Placeholder by default — leave
 	// the server key empty to run the dummy billing flow with no real
 	// charges.
@@ -83,8 +106,11 @@ func Load() *Config {
 		log.Println("config: no .env file found, using environment variables")
 	}
 
+	appEnv := getEnv("APP_ENV", "development")
+	isProd := strings.EqualFold(appEnv, "production")
+
 	cfg := &Config{
-		AppEnv:        getEnv("APP_ENV", "development"),
+		AppEnv:        appEnv,
 		Port:          getEnv("PORT", "8080"),
 		BaseURL:       getEnv("BASE_URL", "http://localhost:8080"),
 		DatabaseURL:   getEnv("DATABASE_URL", "postgres://aichat:aichat@localhost:5432/aichat?sslmode=disable"),
@@ -94,31 +120,82 @@ func Load() *Config {
 		JWTRefreshTTL: getDuration("JWT_REFRESH_TTL", 7*24*time.Hour),
 		ChannelEncryptionKey: getEnv("CHANNEL_ENCRYPTION_KEY",
 			"dev-channel-encryption-key-change-me"),
-		InboxDemoEcho:       getBool("INBOX_DEMO_ECHO", true),
-		WhatsAppAPIBaseURL:   getEnv("WHATSAPP_API_BASE_URL", "https://graph.facebook.com/v20.0"),
-		WhatsAppVerifyToken:  getEnv("WHATSAPP_VERIFY_TOKEN", "dev-whatsapp-verify-token"),
-		WhatsAppAppSecret:    getEnv("WHATSAPP_APP_SECRET", ""),
-		MetaAPIBaseURL:       getEnv("META_API_BASE_URL", "https://graph.facebook.com/v20.0"),
-		InstagramVerifyToken: getEnv("INSTAGRAM_VERIFY_TOKEN", "dev-instagram-verify-token"),
-		MessengerVerifyToken: getEnv("MESSENGER_VERIFY_TOKEN", "dev-messenger-verify-token"),
-		MetaAppSecret:        getEnv("META_APP_SECRET", ""),
-		BroadcastQueueKey:    getEnv("BROADCAST_QUEUE_KEY", "aichat:broadcast:queue"),
-		AIProvider:           strings.ToLower(getEnv("AI_PROVIDER", "mock")),
-		AIAPIKey:             getEnv("AI_API_KEY", ""),
-		AIBaseURL:            getEnv("AI_BASE_URL", "https://api.openai.com/v1"),
-		AIChatModel:          getEnv("AI_MODEL", "gpt-4o-mini"),
-		AIEmbeddingModel:     getEnv("AI_EMBED_MODEL", "text-embedding-3-small"),
-		AIChunkSize:          getInt("AI_CHUNK_SIZE", 800),
-		APIRateLimitPerMinute: getInt("API_RATE_LIMIT_PER_MINUTE", 120),
-		WebhookWorkers:        getInt("WEBHOOK_WORKERS", 4),
-		WebhookQueueSize:      getInt("WEBHOOK_QUEUE_SIZE", 256),
-		MidtransServerKey:     getEnv("MIDTRANS_SERVER_KEY", ""),
-		MidtransBaseURL:       getEnv("MIDTRANS_BASE_URL", ""),
-		CORSOrigins:          splitAndTrim(getEnv("CORS_ORIGINS", "http://localhost:3000")),
-		UploadDir:            getEnv("UPLOAD_DIR", "./storage/uploads"),
+		InboxDemoEcho:              getBool("INBOX_DEMO_ECHO", !isProd),
+		WhatsAppAPIBaseURL:         getEnv("WHATSAPP_API_BASE_URL", "https://graph.facebook.com/v20.0"),
+		WhatsAppVerifyToken:        getEnv("WHATSAPP_VERIFY_TOKEN", "dev-whatsapp-verify-token"),
+		WhatsAppAppSecret:          getEnv("WHATSAPP_APP_SECRET", ""),
+		MetaAPIBaseURL:             getEnv("META_API_BASE_URL", "https://graph.facebook.com/v20.0"),
+		InstagramVerifyToken:       getEnv("INSTAGRAM_VERIFY_TOKEN", "dev-instagram-verify-token"),
+		MessengerVerifyToken:       getEnv("MESSENGER_VERIFY_TOKEN", "dev-messenger-verify-token"),
+		MetaAppSecret:              getEnv("META_APP_SECRET", ""),
+		BroadcastQueueKey:          getEnv("BROADCAST_QUEUE_KEY", "aichat:broadcast:queue"),
+		AIProvider:                 strings.ToLower(getEnv("AI_PROVIDER", "mock")),
+		AIAPIKey:                   getEnv("AI_API_KEY", ""),
+		AIBaseURL:                  getEnv("AI_BASE_URL", "https://api.openai.com/v1"),
+		AIChatModel:                getEnv("AI_MODEL", "gpt-4o-mini"),
+		AIEmbeddingModel:           getEnv("AI_EMBED_MODEL", "text-embedding-3-small"),
+		AIChunkSize:                getInt("AI_CHUNK_SIZE", 800),
+		APIRateLimitPerMinute:      getInt("API_RATE_LIMIT_PER_MINUTE", 120),
+		WebhookWorkers:             getInt("WEBHOOK_WORKERS", 4),
+		WebhookQueueSize:           getInt("WEBHOOK_QUEUE_SIZE", 256),
+		WebhookAllowPrivateTargets: getBool("WEBHOOK_ALLOW_PRIVATE_TARGETS", !isProd),
+		AuthIPRatePerMinute:        getInt("AUTH_IP_RATE_PER_MINUTE", 30),
+		LoginMaxFailures:           getInt("LOGIN_MAX_FAILURES", 10),
+		LoginFailureWindow:         getDuration("LOGIN_FAILURE_WINDOW", 15*time.Minute),
+		MaxBodySize:                getEnv("MAX_BODY_SIZE", "10M"),
+		TrustedProxies:             getCIDRs("TRUSTED_PROXIES"),
+		MidtransServerKey:          getEnv("MIDTRANS_SERVER_KEY", ""),
+		MidtransBaseURL:            getEnv("MIDTRANS_BASE_URL", ""),
+		CORSOrigins:                splitAndTrim(getEnv("CORS_ORIGINS", "http://localhost:3000")),
+		UploadDir:                  getEnv("UPLOAD_DIR", "./storage/uploads"),
 	}
 
 	return cfg
+}
+
+// Development-only defaults that must never reach production.
+const (
+	defaultJWTSecret     = "dev-secret-change-me-in-production"
+	defaultEncryptionKey = "dev-channel-encryption-key-change-me"
+	minSecretLength      = 32
+)
+
+// Validate reports configuration that is unsafe to run with. In
+// development it only returns errors for values that would break the
+// server outright; in production it also rejects placeholder secrets and
+// disabled webhook signature checks, so a misconfigured deploy fails at
+// boot instead of running insecurely.
+func (c *Config) Validate() error {
+	var errs []error
+	if c.JWTSecret == "" {
+		errs = append(errs, errors.New("JWT_SECRET must not be empty"))
+	}
+	if c.ChannelEncryptionKey == "" {
+		errs = append(errs, errors.New("CHANNEL_ENCRYPTION_KEY must not be empty"))
+	}
+
+	if c.IsProduction() {
+		if c.JWTSecret == defaultJWTSecret || len(c.JWTSecret) < minSecretLength {
+			errs = append(errs, fmt.Errorf(
+				"JWT_SECRET must be a random value of at least %d characters in production", minSecretLength))
+		}
+		if c.ChannelEncryptionKey == defaultEncryptionKey || len(c.ChannelEncryptionKey) < minSecretLength {
+			errs = append(errs, fmt.Errorf(
+				"CHANNEL_ENCRYPTION_KEY must be a random value of at least %d characters in production", minSecretLength))
+		}
+		// An empty app secret disables X-Hub-Signature-256 verification,
+		// letting anyone forge inbound customer messages.
+		if c.WhatsAppAppSecret == "" {
+			errs = append(errs, errors.New("WHATSAPP_APP_SECRET is required in production (webhook signature verification)"))
+		}
+		if c.MetaAppSecret == "" {
+			errs = append(errs, errors.New("META_APP_SECRET is required in production (webhook signature verification)"))
+		}
+		if c.InboxDemoEcho {
+			errs = append(errs, errors.New("INBOX_DEMO_ECHO must be false in production"))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // IsProduction reports whether the API runs in production mode.
@@ -180,6 +257,28 @@ func splitAndTrim(v string) []string {
 		if t := strings.TrimSpace(p); t != "" {
 			out = append(out, t)
 		}
+	}
+	return out
+}
+
+// getCIDRs parses a comma-separated list of CIDRs (bare IPs are treated as
+// single-host ranges). Invalid entries are logged and skipped.
+func getCIDRs(key string) []*net.IPNet {
+	var out []*net.IPNet
+	for _, v := range splitAndTrim(os.Getenv(key)) {
+		if !strings.Contains(v, "/") {
+			if ip := net.ParseIP(v); ip != nil && ip.To4() != nil {
+				v += "/32"
+			} else {
+				v += "/128"
+			}
+		}
+		_, ipnet, err := net.ParseCIDR(v)
+		if err != nil {
+			log.Printf("config: invalid CIDR in %s: %q", key, v)
+			continue
+		}
+		out = append(out, ipnet)
 	}
 	return out
 }

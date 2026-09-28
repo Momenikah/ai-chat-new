@@ -155,6 +155,9 @@ func mapWebhookError(c echo.Context, err error) error {
 		return utils.Error(c, http.StatusNotFound, "not_found", "Webhook tidak ditemukan")
 	case errors.Is(err, services.ErrInvalidWebhookURL):
 		return utils.Error(c, http.StatusUnprocessableEntity, "invalid_url", "URL webhook tidak valid")
+	case errors.Is(err, services.ErrPrivateWebhookURL):
+		return utils.Error(c, http.StatusUnprocessableEntity, "private_url",
+			"URL webhook harus mengarah ke host publik (bukan localhost/jaringan privat)")
 	case errors.Is(err, services.ErrInvalidEvent):
 		return utils.Error(c, http.StatusUnprocessableEntity, "invalid_event", "Event webhook tidak dikenal")
 	}

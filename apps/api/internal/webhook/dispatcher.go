@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/aichat/api/internal/models"
+	"github.com/aichat/api/internal/netguard"
 	"github.com/aichat/api/internal/repositories"
 )
 
@@ -60,8 +61,9 @@ type job struct {
 
 // NewAsyncDispatcher constructs an AsyncDispatcher with `workers`
 // concurrent senders and a buffered queue. Start() must be called once
-// before any Emit.
-func NewAsyncDispatcher(repo *repositories.WebhookEndpointRepository, workers, queueSize int) *AsyncDispatcher {
+// before any Emit. Unless allowPrivate is set, deliveries to loopback or
+// private-network addresses are refused (SSRF protection, see netguard).
+func NewAsyncDispatcher(repo *repositories.WebhookEndpointRepository, workers, queueSize int, allowPrivate bool) *AsyncDispatcher {
 	if workers <= 0 {
 		workers = 4
 	}
@@ -70,7 +72,7 @@ func NewAsyncDispatcher(repo *repositories.WebhookEndpointRepository, workers, q
 	}
 	return &AsyncDispatcher{
 		repo:    repo,
-		client:  &http.Client{Timeout: 15 * time.Second},
+		client:  netguard.NewHTTPClient(15*time.Second, allowPrivate),
 		queue:   make(chan job, queueSize),
 		workers: workers,
 	}

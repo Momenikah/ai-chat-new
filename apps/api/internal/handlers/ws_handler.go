@@ -21,10 +21,11 @@ import (
 // the access token is passed as a `?token=` query parameter and validated
 // alongside the requested `?workspace_id=` membership.
 type WSHandler struct {
-	hub      *realtime.Hub
-	tokens   *auth.TokenManager
-	members  *repositories.WorkspaceMemberRepository
-	presence *services.PresenceService
+	hub        *realtime.Hub
+	tokens     *auth.TokenManager
+	members    *repositories.WorkspaceMemberRepository
+	workspaces *repositories.WorkspaceRepository
+	presence   *services.PresenceService
 }
 
 // NewWSHandler constructs a WSHandler.
@@ -32,9 +33,13 @@ func NewWSHandler(
 	hub *realtime.Hub,
 	tokens *auth.TokenManager,
 	members *repositories.WorkspaceMemberRepository,
+	workspaces *repositories.WorkspaceRepository,
 	presence *services.PresenceService,
 ) *WSHandler {
-	return &WSHandler{hub: hub, tokens: tokens, members: members, presence: presence}
+	return &WSHandler{
+		hub: hub, tokens: tokens, members: members,
+		workspaces: workspaces, presence: presence,
+	}
 }
 
 // Handle handles GET /ws?workspace_id=…&token=….
@@ -66,6 +71,13 @@ func (h *WSHandler) Handle(c echo.Context) error {
 	if member.Status != models.MemberActive {
 		return utils.Error(c, http.StatusForbidden,
 			"forbidden", "Keanggotaan workspace Anda tidak aktif")
+	}
+	// Mirror WorkspaceMiddleware: suspended workspaces get no realtime feed.
+	if h.workspaces != nil {
+		if ws, err := h.workspaces.GetByID(c.Request().Context(), workspaceID); err == nil && ws.IsSuspended() {
+			return utils.Error(c, http.StatusForbidden,
+				"workspace_suspended", "Workspace ini sedang ditangguhkan. Hubungi dukungan.")
+		}
 	}
 
 	conn, err := realtime.Upgrader.Upgrade(c.Response(), c.Request(), nil)

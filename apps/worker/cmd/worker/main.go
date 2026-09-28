@@ -44,7 +44,7 @@ func main() {
 	sender := broadcast.NewSender(cfg.WhatsAppAPIBaseURL, cfg.MetaAPIBaseURL)
 	store := broadcast.NewStore(pool)
 	limiter := broadcast.NewChannelLimiter()
-	webhookEmitter := webhookemit.New(pool)
+	webhookEmitter := webhookemit.New(pool, cfg.WebhookAllowPrivateTargets)
 	proc := broadcast.NewProcessor(rdb, cfg.BroadcastQueueKey, sender, store, limiter, cfg.MaxAttempts, webhookEmitter)
 
 	log.Printf("worker: starting %d goroutines on queue %q (env=%s)",

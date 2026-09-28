@@ -60,6 +60,27 @@ func (r *RefreshTokenRepository) GetValidByHash(ctx context.Context, tokenHash s
 	return &t, nil
 }
 
+// Consume atomically revokes a valid (unrevoked, unexpired) token and
+// returns it. Because the check and the revoke are a single UPDATE, two
+// concurrent refreshes with the same token cannot both succeed.
+func (r *RefreshTokenRepository) Consume(ctx context.Context, tokenHash string) (*RefreshToken, error) {
+	const q = `
+		UPDATE refresh_tokens SET revoked = true
+		WHERE token_hash = $1 AND revoked = false AND expires_at > now()
+		RETURNING id::text, user_id::text, token_hash, expires_at, revoked, created_at`
+	var t RefreshToken
+	err := r.db.QueryRow(ctx, q, tokenHash).Scan(
+		&t.ID, &t.UserID, &t.TokenHash, &t.ExpiresAt, &t.Revoked, &t.CreatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &t, nil
+}
+
 // Revoke marks a single token (by hash) as revoked.
 func (r *RefreshTokenRepository) Revoke(ctx context.Context, tokenHash string) error {
 	_, err := r.db.Exec(ctx,

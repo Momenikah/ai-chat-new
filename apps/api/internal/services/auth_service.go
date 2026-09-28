@@ -24,6 +24,10 @@ var (
 	ErrUserInactive       = errors.New("user account is inactive")
 )
 
+// dummyPasswordHash is compared against on unknown-email logins to
+// equalise timing. Generated with the same cost as real password hashes.
+var dummyPasswordHash, _ = auth.HashPassword("timing-equalisation-only")
+
 // AuthResult bundles a user with freshly issued tokens.
 type AuthResult struct {
 	User         *models.User `json:"user"`
@@ -137,6 +141,9 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*AuthR
 	user, err := s.users.GetByEmail(ctx, strings.TrimSpace(email))
 	if err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
+			// Burn a bcrypt comparison anyway so response time does not
+			// reveal whether the email is registered.
+			auth.CheckPassword(dummyPasswordHash, password)
 			return nil, ErrInvalidCredentials
 		}
 		return nil, err
@@ -155,9 +162,9 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*AuthR
 
 // Refresh rotates a refresh token and issues a fresh pair.
 func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*AuthResult, error) {
-	hash := auth.HashRefreshToken(refreshToken)
-
-	stored, err := s.tokens.GetValidByHash(ctx, hash)
+	// Consume = validate + revoke in one statement, so a token can only
+	// ever be exchanged once even under concurrent requests.
+	stored, err := s.tokens.Consume(ctx, auth.HashRefreshToken(refreshToken))
 	if err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			return nil, ErrInvalidRefresh
@@ -170,9 +177,6 @@ func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*AuthRe
 	}
 	if !user.IsActive {
 		return nil, ErrUserInactive
-	}
-	if err := s.tokens.Revoke(ctx, hash); err != nil {
-		return nil, err
 	}
 	return s.issueTokens(ctx, user)
 }

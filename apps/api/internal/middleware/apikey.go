@@ -2,15 +2,16 @@ package middleware
 
 import (
 	"context"
-	"fmt"
+	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/labstack/echo/v4"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/aichat/api/internal/apikey"
 	"github.com/aichat/api/internal/models"
+	"github.com/aichat/api/internal/ratelimit"
 	"github.com/aichat/api/internal/repositories"
 	"github.com/aichat/api/internal/utils"
 )
@@ -28,15 +29,24 @@ const (
 // the same WorkspaceID(c) accessor as the dashboard handlers) plus
 // ContextKeyAPIKeyID.
 type APIKeyMiddleware struct {
-	keys             *repositories.APIKeyRepository
-	rdb              *redis.Client
-	ratePerMinute    int
+	keys       *repositories.APIKeyRepository
+	workspaces *repositories.WorkspaceRepository
+	limiter    *ratelimit.Limiter
 }
 
 // NewAPIKeyMiddleware constructs an APIKeyMiddleware. A ratePerMinute <= 0
-// disables rate limiting.
-func NewAPIKeyMiddleware(keys *repositories.APIKeyRepository, rdb *redis.Client, ratePerMinute int) *APIKeyMiddleware {
-	return &APIKeyMiddleware{keys: keys, rdb: rdb, ratePerMinute: ratePerMinute}
+// or a nil store disables rate limiting.
+func NewAPIKeyMiddleware(
+	keys *repositories.APIKeyRepository,
+	workspaces *repositories.WorkspaceRepository,
+	store ratelimit.Store,
+	ratePerMinute int,
+) *APIKeyMiddleware {
+	return &APIKeyMiddleware{
+		keys:       keys,
+		workspaces: workspaces,
+		limiter:    ratelimit.New(store, "apirl", ratePerMinute, time.Minute),
+	}
 }
 
 // Authenticate is the middleware entrypoint for the public API group.
@@ -61,10 +71,19 @@ func (m *APIKeyMiddleware) Authenticate() echo.MiddlewareFunc {
 			}
 
 			// Rate limit per key (fixed window per minute).
-			if allowed, retryAfter := m.allow(ctx, key.ID); !allowed {
-				c.Response().Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
+			if allowed, retryAfter := m.limiter.Allow(ctx, key.ID); !allowed {
+				SetRetryAfter(c, retryAfter)
 				return utils.Error(c, http.StatusTooManyRequests,
 					"rate_limited", "Batas rate limit API terlampaui, coba lagi nanti")
+			}
+
+			// Suspended workspaces are frozen for API keys too, not only
+			// for dashboard sessions.
+			if m.workspaces != nil {
+				if ws, err := m.workspaces.GetByID(ctx, key.WorkspaceID); err == nil && ws.IsSuspended() {
+					return utils.Error(c, http.StatusForbidden,
+						"workspace_suspended", "Workspace ini sedang ditangguhkan. Hubungi dukungan.")
+				}
 			}
 
 			c.Set(ContextKeyWorkspaceID, key.WorkspaceID)
@@ -85,27 +104,13 @@ func (m *APIKeyMiddleware) Authenticate() echo.MiddlewareFunc {
 	}
 }
 
-// allow implements a fixed-window counter in Redis. Returns (allowed,
-// secondsUntilReset). If Redis is unavailable it fails open (allows) so a
-// cache outage never takes the public API down.
-func (m *APIKeyMiddleware) allow(ctx context.Context, keyID string) (bool, int) {
-	if m.ratePerMinute <= 0 || m.rdb == nil {
-		return true, 0
+// SetRetryAfter writes a Retry-After header rounded up to whole seconds.
+func SetRetryAfter(c echo.Context, d time.Duration) {
+	secs := int(math.Ceil(d.Seconds()))
+	if secs < 1 {
+		secs = 1
 	}
-	window := time.Now().Unix() / 60
-	redisKey := fmt.Sprintf("apirl:%s:%d", keyID, window)
-
-	count, err := m.rdb.Incr(ctx, redisKey).Result()
-	if err != nil {
-		return true, 0 // fail open
-	}
-	if count == 1 {
-		_ = m.rdb.Expire(ctx, redisKey, 70*time.Second).Err()
-	}
-	if count > int64(m.ratePerMinute) {
-		return false, 60 - int(time.Now().Unix()%60)
-	}
-	return true, 0
+	c.Response().Header().Set("Retry-After", strconv.Itoa(secs))
 }
 
 func (m *APIKeyMiddleware) logUsage(key *models.APIKey, c echo.Context, start time.Time, handlerErr error) {

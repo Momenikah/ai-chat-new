@@ -24,6 +24,7 @@ import (
 	"github.com/aichat/api/internal/midtrans"
 	appmw "github.com/aichat/api/internal/middleware"
 	"github.com/aichat/api/internal/models"
+	"github.com/aichat/api/internal/ratelimit"
 	"github.com/aichat/api/internal/realtime"
 	"github.com/aichat/api/internal/redis"
 	"github.com/aichat/api/internal/repositories"
@@ -36,6 +37,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("api: invalid configuration:\n%v", err)
+	}
 	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -168,11 +172,13 @@ func main() {
 	// The async dispatcher delivers outbound webhooks off the request path
 	// with HMAC signing + exponential-backoff retries.
 	webhookDispatcher := webhook.NewAsyncDispatcher(
-		webhookEndpointRepo, cfg.WebhookWorkers, cfg.WebhookQueueSize)
+		webhookEndpointRepo, cfg.WebhookWorkers, cfg.WebhookQueueSize,
+		cfg.WebhookAllowPrivateTargets)
 	webhookDispatcher.Start(rootCtx)
 
 	apiKeyService := services.NewAPIKeyService(apiKeyRepo)
 	webhookService := services.NewWebhookService(webhookEndpointRepo, webhookDispatcher)
+	webhookService.SetAllowPrivateTargets(cfg.WebhookAllowPrivateTargets)
 	publicAPIService := services.NewPublicAPIService(
 		channelRepo, contactRepo, conversationRepo, messageRepo,
 		contactService, templateService, channelDeliverers,
@@ -216,8 +222,16 @@ func main() {
 		_ = presenceService.Set(ctx, userID, workspaceID, "offline")
 	}
 
+	// Brute-force protection for /auth, shared across replicas via Redis.
+	rateStore := ratelimit.NewRedisStore(rdb)
+	authHandler := handlers.NewAuthHandler(authService)
+	authHandler.SetThrottle(handlers.AuthThrottle{
+		PerIP:         ratelimit.New(rateStore, "authrl", cfg.AuthIPRatePerMinute, time.Minute),
+		LoginFailures: ratelimit.New(rateStore, "loginfail", cfg.LoginMaxFailures, cfg.LoginFailureWindow),
+	})
+
 	deps := routes.Deps{
-		Auth:         handlers.NewAuthHandler(authService),
+		Auth:         authHandler,
 		Dashboard:    handlers.NewDashboardHandler(dashboardService),
 		Health:       handlers.NewHealthHandler(pool, rdb),
 		Workspace:    handlers.NewWorkspaceHandler(workspaceService),
@@ -226,7 +240,7 @@ func main() {
 		Conversation: handlers.NewConversationHandler(conversationService),
 		Message:      handlers.NewMessageHandler(messageService),
 		Note:         handlers.NewNoteHandler(noteService),
-		WS:           handlers.NewWSHandler(hub, tokenManager, memberRepo, presenceService),
+		WS:           handlers.NewWSHandler(hub, tokenManager, memberRepo, workspaceRepo, presenceService),
 		Contact:      handlers.NewContactHandler(contactService),
 		Tag:          handlers.NewTagHandler(tagService),
 		Segment:      handlers.NewSegmentHandler(segmentService),
@@ -249,7 +263,7 @@ func main() {
 		WorkspaceMW: appmw.NewWorkspaceMiddleware(
 			memberRepo, channelRepo, conversationRepo, contactRepo,
 			apiKeyRepo, webhookEndpointRepo, workspaceRepo),
-		APIKeyMW: appmw.NewAPIKeyMiddleware(apiKeyRepo, rdb, cfg.APIRateLimitPerMinute),
+		APIKeyMW: appmw.NewAPIKeyMiddleware(apiKeyRepo, workspaceRepo, rateStore, cfg.APIRateLimitPerMinute),
 		AdminMW:  appmw.NewAdminMiddleware(userRepo),
 	}
 
@@ -258,11 +272,30 @@ func main() {
 	e.HideBanner = true
 	e.HidePort = true
 	e.Validator = utils.NewValidator()
+	// Only trust X-Forwarded-For when it was set by a proxy on a
+	// loopback/private network (plus any TRUSTED_PROXIES), so direct
+	// clients cannot spoof their IP — the auth rate limiter and audit logs
+	// rely on it.
+	trustOpts := make([]echo.TrustOption, 0, len(cfg.TrustedProxies))
+	for _, cidr := range cfg.TrustedProxies {
+		trustOpts = append(trustOpts, echo.TrustIPRange(cidr))
+	}
+	e.IPExtractor = echo.ExtractIPFromXFFHeader(trustOpts...)
+	// Guard against slowloris-style header dribbling. No global
+	// read/write timeout: uploads, AI calls and WebSockets are long-lived.
+	e.Server.ReadHeaderTimeout = 10 * time.Second
+	e.Server.IdleTimeout = 120 * time.Second
 
 	// Capture server errors (5xx) into system_logs for the admin error-log
 	// viewer, then delegate to Echo's default handler.
 	defaultErrorHandler := e.HTTPErrorHandler
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
+		// Handlers that already wrote their own response (e.g. a 422 from
+		// bindAndValidate returning errRequestHandled) are not server
+		// errors — don't log them as 500s or write a second body.
+		if c.Response().Committed {
+			return
+		}
 		status := http.StatusInternalServerError
 		if he, ok := err.(*echo.HTTPError); ok {
 			status = he.Code
@@ -278,6 +311,8 @@ func main() {
 	}
 
 	e.Use(echomw.Recover())
+	e.Use(echomw.BodyLimit(cfg.MaxBodySize))
+	e.Use(echomw.Secure())
 	e.Use(echomw.RequestLoggerWithConfig(echomw.RequestLoggerConfig{
 		LogStatus: true, LogMethod: true, LogURI: true, LogLatency: true,
 		LogValuesFunc: func(c echo.Context, v echomw.RequestLoggerValues) error {

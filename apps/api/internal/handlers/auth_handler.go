@@ -3,17 +3,41 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 
 	"github.com/aichat/api/internal/middleware"
+	"github.com/aichat/api/internal/ratelimit"
 	"github.com/aichat/api/internal/services"
 	"github.com/aichat/api/internal/utils"
 )
 
 // AuthHandler exposes the authentication endpoints.
 type AuthHandler struct {
-	auth *services.AuthService
+	auth     *services.AuthService
+	throttle AuthThrottle
+}
+
+// AuthThrottle holds the brute-force limits for the auth endpoints. A nil
+// limiter disables that check.
+type AuthThrottle struct {
+	// PerIP caps login and register requests per client IP (separate
+	// buckets per endpoint).
+	PerIP *ratelimit.Limiter
+	// LoginFailures caps failed logins per email; the counter resets on a
+	// successful login.
+	LoginFailures *ratelimit.Limiter
+}
+
+// SetThrottle wires brute-force protection. Optional.
+func (h *AuthHandler) SetThrottle(t AuthThrottle) { h.throttle = t }
+
+func tooManyAttempts(c echo.Context, retryAfter time.Duration) error {
+	middleware.SetRetryAfter(c, retryAfter)
+	return utils.Error(c, http.StatusTooManyRequests,
+		"too_many_attempts", "Terlalu banyak percobaan. Silakan coba lagi nanti.")
 }
 
 // NewAuthHandler constructs an AuthHandler.
@@ -43,6 +67,9 @@ type logoutRequest struct {
 
 // Register handles POST /auth/register.
 func (h *AuthHandler) Register(c echo.Context) error {
+	if ok, retry := h.throttle.PerIP.Allow(c.Request().Context(), "register:"+c.RealIP()); !ok {
+		return tooManyAttempts(c, retry)
+	}
 	var req registerRequest
 	if err := bindAndValidate(c, &req); err != nil {
 		return err
@@ -68,15 +95,26 @@ func (h *AuthHandler) Register(c echo.Context) error {
 
 // Login handles POST /auth/login.
 func (h *AuthHandler) Login(c echo.Context) error {
+	ctx := c.Request().Context()
+	if ok, retry := h.throttle.PerIP.Allow(ctx, "login:"+c.RealIP()); !ok {
+		return tooManyAttempts(c, retry)
+	}
+
 	var req loginRequest
 	if err := bindAndValidate(c, &req); err != nil {
 		return err
 	}
 
-	result, err := h.auth.Login(c.Request().Context(), req.Email, req.Password)
+	emailKey := strings.ToLower(strings.TrimSpace(req.Email))
+	if blocked, retry := h.throttle.LoginFailures.Blocked(ctx, emailKey); blocked {
+		return tooManyAttempts(c, retry)
+	}
+
+	result, err := h.auth.Login(ctx, req.Email, req.Password)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrInvalidCredentials):
+			h.throttle.LoginFailures.Hit(ctx, emailKey)
 			return utils.Error(c, http.StatusUnauthorized,
 				"invalid_credentials", "Email atau password salah")
 		case errors.Is(err, services.ErrUserInactive):
@@ -88,6 +126,7 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		}
 	}
 
+	h.throttle.LoginFailures.Reset(ctx, emailKey)
 	return utils.OK(c, result)
 }
 
