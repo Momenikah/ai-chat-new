@@ -62,7 +62,7 @@ func (m *WorkspaceMiddleware) RequireContactRole(minimum models.MemberRole) echo
 				return utils.Error(c, http.StatusInternalServerError,
 					"internal_error", "Gagal memuat kontak")
 			}
-			if err := m.authorize(c, contact.WorkspaceID, minimum); err != nil {
+			if ok, err := m.authorize(c, contact.WorkspaceID, minimum); !ok {
 				return err
 			}
 			c.Set(ContextKeyContactID, contact.ID)
@@ -92,7 +92,7 @@ func (m *WorkspaceMiddleware) RequireConversationRole(minimum models.MemberRole)
 					"internal_error", "Gagal memuat percakapan")
 			}
 
-			if err := m.authorize(c, conv.WorkspaceID, minimum); err != nil {
+			if ok, err := m.authorize(c, conv.WorkspaceID, minimum); !ok {
 				return err
 			}
 			c.Set(ContextKeyConversationID, conv.ID)
@@ -112,7 +112,7 @@ func (m *WorkspaceMiddleware) RequireWorkspaceRole(minimum models.MemberRole) ec
 				return utils.Error(c, http.StatusBadRequest,
 					"bad_request", "Workspace id tidak ditemukan")
 			}
-			if err := m.authorize(c, workspaceID, minimum); err != nil {
+			if ok, err := m.authorize(c, workspaceID, minimum); !ok {
 				return err
 			}
 			return next(c)
@@ -141,7 +141,7 @@ func (m *WorkspaceMiddleware) RequireChannelRole(minimum models.MemberRole) echo
 					"internal_error", "Gagal memuat channel")
 			}
 
-			if err := m.authorize(c, channel.WorkspaceID, minimum); err != nil {
+			if ok, err := m.authorize(c, channel.WorkspaceID, minimum); !ok {
 				return err
 			}
 			c.Set(ContextKeyChannelID, channel.ID)
@@ -167,7 +167,7 @@ func (m *WorkspaceMiddleware) RequireAPIKeyRole(minimum models.MemberRole) echo.
 				}
 				return utils.Error(c, http.StatusInternalServerError, "internal_error", "Gagal memuat API key")
 			}
-			if err := m.authorize(c, key.WorkspaceID, minimum); err != nil {
+			if ok, err := m.authorize(c, key.WorkspaceID, minimum); !ok {
 				return err
 			}
 			return next(c)
@@ -191,7 +191,7 @@ func (m *WorkspaceMiddleware) RequireWebhookRole(minimum models.MemberRole) echo
 				}
 				return utils.Error(c, http.StatusInternalServerError, "internal_error", "Gagal memuat webhook")
 			}
-			if err := m.authorize(c, ep.WorkspaceID, minimum); err != nil {
+			if ok, err := m.authorize(c, ep.WorkspaceID, minimum); !ok {
 				return err
 			}
 			return next(c)
@@ -199,38 +199,44 @@ func (m *WorkspaceMiddleware) RequireWebhookRole(minimum models.MemberRole) echo
 	}
 }
 
-// authorize performs the membership + role check shared by both guards.
-func (m *WorkspaceMiddleware) authorize(c echo.Context, workspaceID string, minimum models.MemberRole) error {
+// authorize performs the membership + role check shared by every guard.
+//
+// It returns ok=false when access is denied, after writing the error
+// response; callers must then stop the chain and return err (the result of
+// writing that response, usually nil). Checking only `err != nil` is NOT
+// enough — utils.Error returns nil on a successful write, which previously
+// let denied requests fall through to the handler.
+func (m *WorkspaceMiddleware) authorize(c echo.Context, workspaceID string, minimum models.MemberRole) (ok bool, err error) {
 	member, err := m.members.Get(c.Request().Context(), workspaceID, UserID(c))
 	if err != nil {
 		if errors.Is(err, repositories.ErrNotFound) {
 			// 404 (not 403) so we never confirm a workspace the caller
 			// has no relationship with even exists.
-			return utils.Error(c, http.StatusNotFound,
+			return false, utils.Error(c, http.StatusNotFound,
 				"not_found", "Workspace tidak ditemukan")
 		}
-		return utils.Error(c, http.StatusInternalServerError,
+		return false, utils.Error(c, http.StatusInternalServerError,
 			"internal_error", "Gagal memverifikasi akses workspace")
 	}
 
 	if member.Status != models.MemberActive {
-		return utils.Error(c, http.StatusForbidden,
+		return false, utils.Error(c, http.StatusForbidden,
 			"forbidden", "Keanggotaan workspace Anda tidak aktif")
 	}
 	if !member.Role.AtLeast(minimum) {
-		return utils.Error(c, http.StatusForbidden,
+		return false, utils.Error(c, http.StatusForbidden,
 			"forbidden", "Role Anda tidak cukup untuk aksi ini")
 	}
 
 	// Suspended workspaces are frozen for everyone (set by a super admin).
 	if m.workspaces != nil {
 		if ws, err := m.workspaces.GetByID(c.Request().Context(), workspaceID); err == nil && ws.IsSuspended() {
-			return utils.Error(c, http.StatusForbidden,
+			return false, utils.Error(c, http.StatusForbidden,
 				"workspace_suspended", "Workspace ini sedang ditangguhkan. Hubungi dukungan.")
 		}
 	}
 
 	c.Set(ContextKeyWorkspaceID, workspaceID)
 	c.Set(ContextKeyMemberRole, string(member.Role))
-	return nil
+	return true, nil
 }
