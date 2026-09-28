@@ -1,7 +1,7 @@
 # AI Chat — Omnichannel CRM SaaS
 
 Platform SaaS omnichannel CRM untuk menyatukan **WhatsApp Business API,
-Instagram DM, Facebook Messenger, AI chatbot, multi-agent inbox, CRM contact,
+WhatsApp unofficial (OneSender & StarSender), Instagram DM, Facebook Messenger, AI chatbot, multi-agent inbox, CRM contact,
 broadcast, template message, API, webhook, dan n8n integration** dalam satu
 dashboard.
 
@@ -107,6 +107,8 @@ psql "postgres://aichat:aichat@localhost:5432/aichat?sslmode=disable" \
   -f apps/api/migrations/000010_billing.up.sql
 psql "postgres://aichat:aichat@localhost:5432/aichat?sslmode=disable" \
   -f apps/api/migrations/000011_admin.up.sql
+psql "postgres://aichat:aichat@localhost:5432/aichat?sslmode=disable" \
+  -f apps/api/migrations/000012_wa_gateways.up.sql
 ```
 
 > Migration `000010` juga **men-seed 3 paket harga** (FREE/BASIC/LITE)
@@ -423,6 +425,60 @@ Target: Ubuntu 22.04/24.04 + Nginx + Certbot + systemd.
 > di Nginx (Certbot), dan pastikan `BASE_URL` mengarah ke domain HTTPS
 > agar webhook URL yang ditampilkan di UI benar.
 
+## 📱 WhatsApp Unofficial Gateway (OneSender & StarSender)
+
+Selain WhatsApp Cloud API resmi, nomor WhatsApp biasa bisa dihubungkan
+lewat gateway **unofficial** (berbasis WhatsApp Web) — tanpa verifikasi
+Meta Business. Menu **Channel → Tambah channel → WA OneSender / WA
+StarSender** (atau `/dashboard/channels/wa-gateway`).
+
+| | OneSender | StarSender V3 |
+|---|---|---|
+| Kirim | `POST {instance}/api/v1/messages` | `POST https://api.starsender.online/api/send` |
+| Auth | `Authorization: Bearer <API key>` | `Authorization: <Device API Key>` |
+| Credential | URL instance + API key | Device API Key (menu Device) |
+
+**Setup**
+
+1. Scan QR WhatsApp di dashboard gateway sampai device online.
+2. Hubungkan di AI Chat: isi API key (dan URL instance untuk OneSender).
+   Nomor device opsional — dipakai sebagai label & untuk re-key channel
+   yang sama.
+3. Salin **Webhook URL** yang ditampilkan ke pengaturan webhook
+   gateway (pesan masuk). Formatnya
+   `{BASE_URL}/api/webhooks/wa-gateway/{channel_id}/{token}` — gateway
+   tidak menandatangani webhook, jadi token acak 256-bit per channel di
+   URL itulah autentikasinya. Token bisa diganti kapan saja (URL lama
+   langsung mati).
+4. Klik **Kirim pesan tes**. Status channel menjadi `connected` saat kirim
+   atau webhook pertama berhasil, `error` (dengan pesan dari gateway)
+   bila gagal.
+
+**Perilaku**
+
+- Terintegrasi penuh: Inbox (balas dari dashboard), AI auto-reply,
+  broadcast (lewat worker), Public API `/public/messages/send`, event
+  webhook keluar (`message.received`, `message.sent`, …).
+- Kontak dibagi dengan channel WhatsApp resmi (kunci: nomor internasional),
+  jadi satu pelanggan = satu kontak. Nomor lokal `08…` otomatis menjadi
+  `628…`.
+- Pesan grup dan pesan yang dikirim dari device sendiri (`from_me`)
+  diabaikan; webhook yang dikirim ulang oleh gateway di-dedupe berdasarkan
+  message id.
+- Parser webhook toleran terhadap variasi nama field antar versi gateway
+  (`from`/`sender`/`remoteJid`, `message`/`text`/`caption`, `file`/
+  `media_url`, dll.). Payload mentah selalu tersimpan di `webhook_logs`
+  untuk debugging.
+- Nomor gateway dihitung ke limit paket `whatsapp_numbers` bersama nomor
+  Cloud API.
+- URL instance OneSender berasal dari tenant, sehingga diperlakukan seperti
+  URL webhook: host privat/localhost diblokir di produksi (lihat
+  `WEBHOOK_ALLOW_PRIVATE_TARGETS`).
+
+> ⚠️ Gateway unofficial melanggar ketentuan WhatsApp; nomor dapat
+> diblokir bila dipakai spam. Gunakan `rate_per_minute` broadcast yang
+> rendah dan kirim hanya ke kontak yang sudah opt-in.
+
 ## 📷 Instagram + Messenger Meta App setup
 
 Keduanya berbagi **satu Meta App** (boleh sama dengan app WhatsApp, atau
@@ -729,4 +785,7 @@ base ≤ ~10k chunk per workspace. Untuk skala lebih besar, swap
   overview platform, kelola user/workspace/subscription/channel/invoice,
   suspend workspace (ditegakkan di middleware), impersonate placeholder +
   audit log, abuse report management, webhook & system/error log viewer.
-- **Part 13** — Multi-bahasa, analytics lanjutan, mobile app.
+- **Part 13 ✅** — WhatsApp unofficial gateway: OneSender & StarSender
+  sebagai channel baru (inbox, AI auto-reply, broadcast, public API,
+  webhook masuk ber-token), plus hardening keamanan (lihat 🔒).
+- **Part 14** — Multi-bahasa, analytics lanjutan, mobile app.
