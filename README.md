@@ -316,6 +316,57 @@ sqlc generate     # output → internal/db/
 
 ---
 
+## 🧪 Testing & CI
+
+```bash
+# Unit test (tanpa infrastruktur)
+cd apps/api    && go test ./...
+cd apps/worker && go test ./...
+
+# Integration test (butuh Postgres yang sudah di-migrate + Redis)
+cd apps/api && \
+  TEST_DATABASE_URL="postgres://aichat:aichat@localhost:5432/aichat?sslmode=disable" \
+  TEST_REDIS_URL="redis://localhost:6379/15" \
+  go test ./...
+
+# Frontend
+pnpm --filter web lint && pnpm --filter web exec tsc --noEmit
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) menjalankan semua langkah di
+atas (termasuk integration test dengan service Postgres + Redis) pada
+setiap push ke `main` dan setiap pull request.
+
+## 🔒 Hardening Keamanan
+
+- **Isolasi tenant** — guard workspace (`RequireWorkspaceRole`,
+  `RequireChannelRole`, `RequireWebhookRole`, …) menghentikan request
+  sepenuhnya saat akses ditolak; handler tidak pernah dijalankan untuk
+  non-member, role yang kurang, atau workspace yang ditangguhkan.
+- **Workspace suspended** dibekukan di semua pintu masuk: dashboard (JWT),
+  Public API (API key), dan WebSocket.
+- **Validasi konfigurasi produksi** — dengan `APP_ENV=production` API
+  menolak start bila `JWT_SECRET` / `CHANNEL_ENCRYPTION_KEY` masih default
+  atau < 32 karakter, `WHATSAPP_APP_SECRET` / `META_APP_SECRET` kosong
+  (signature webhook Meta tidak terverifikasi), atau `INBOX_DEMO_ECHO=true`.
+- **Proteksi SSRF webhook** — URL webhook ke localhost, jaringan privat,
+  atau metadata cloud ditolak saat disimpan dan diblokir saat pengiriman
+  (dicek setelah resolusi DNS, termasuk redirect). Aktif default di
+  produksi; atur `WEBHOOK_ALLOW_PRIVATE_TARGETS=true` hanya untuk dev
+  (mis. n8n lokal).
+- **Brute-force login** — rate limit per IP untuk login/register dan
+  lockout sementara per email setelah `LOGIN_MAX_FAILURES` gagal login
+  (`429` + header `Retry-After`). Waktu respons login tidak membocorkan
+  apakah email terdaftar.
+- **Rotasi refresh token atomik** — satu refresh token hanya bisa ditukar
+  sekali, bahkan untuk request yang bersamaan.
+- **HTTP** — batas ukuran body (`MAX_BODY_SIZE`), security header
+  (`nosniff`, `X-Frame-Options`), `ReadHeaderTimeout` anti-slowloris, dan
+  `X-Forwarded-For` hanya dipercaya dari proxy di jaringan privat/loopback.
+  Jika ada CDN/load balancer ber-IP publik di depan API (mis. Cloudflare),
+  daftarkan rentang IP-nya di `TRUSTED_PROXIES` agar rate limit melihat IP
+  klien yang sebenarnya.
+
 ## 🌐 Deployment ke VPS (ringkasan)
 
 Target: Ubuntu 22.04/24.04 + Nginx + Certbot + systemd.
