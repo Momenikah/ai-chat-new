@@ -19,6 +19,7 @@ import (
 
 	"github.com/aichat/worker/internal/broadcast"
 	"github.com/aichat/worker/internal/config"
+	"github.com/aichat/worker/internal/netguard"
 	"github.com/aichat/worker/internal/webhookemit"
 )
 
@@ -41,7 +42,8 @@ func main() {
 	defer pool.Close()
 	log.Println("worker: connected to Postgres")
 
-	sender := broadcast.NewSender(cfg.WhatsAppAPIBaseURL, cfg.MetaAPIBaseURL)
+	sender := broadcast.NewSender(cfg.WhatsAppAPIBaseURL, cfg.MetaAPIBaseURL).
+		WithGateway(netguard.NewHTTPClient(30*time.Second, cfg.WebhookAllowPrivateTargets), cfg.StarSenderAPIURL)
 	store := broadcast.NewStore(pool)
 	limiter := broadcast.NewChannelLimiter()
 	webhookEmitter := webhookemit.New(pool, cfg.WebhookAllowPrivateTargets)

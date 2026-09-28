@@ -25,6 +25,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/aichat/worker/internal/netguard"
 )
 
 // Signature + routing headers — identical to the API side so receivers can
@@ -44,7 +46,7 @@ type Emitter struct {
 // New constructs an Emitter. Unless allowPrivate is set, deliveries to
 // loopback / private-network addresses are refused (SSRF protection).
 func New(pool *pgxpool.Pool, allowPrivate bool) *Emitter {
-	return &Emitter{pool: pool, client: newHTTPClient(15*time.Second, allowPrivate)}
+	return &Emitter{pool: pool, client: netguard.NewHTTPClient(15*time.Second, allowPrivate)}
 }
 
 type envelope struct {

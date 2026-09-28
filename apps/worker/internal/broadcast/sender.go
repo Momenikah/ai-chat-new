@@ -11,11 +11,16 @@ import (
 	"time"
 )
 
-// Sender wraps Meta Graph API HTTP calls used by the worker.
+// Sender wraps the provider HTTP calls used by the worker: Meta Graph API
+// and the unofficial WhatsApp gateways (OneSender / StarSender).
 type Sender struct {
 	whatsAppBaseURL string
 	metaBaseURL     string
+	starSenderURL   string
 	http            *http.Client
+	// gatewayHTTP calls tenant-supplied OneSender URLs, so it must be
+	// SSRF-guarded (see netguard).
+	gatewayHTTP *http.Client
 }
 
 // NewSender constructs a Sender. Defaults to Graph API v20.0.
@@ -29,8 +34,22 @@ func NewSender(whatsAppBaseURL, metaBaseURL string) *Sender {
 	return &Sender{
 		whatsAppBaseURL: whatsAppBaseURL,
 		metaBaseURL:     metaBaseURL,
+		starSenderURL:   defaultStarSenderURL,
 		http:            &http.Client{Timeout: 20 * time.Second},
+		gatewayHTTP:     &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+// WithGateway configures gateway delivery: the (guarded) HTTP client and
+// an optional StarSender endpoint override.
+func (s *Sender) WithGateway(client *http.Client, starSenderURL string) *Sender {
+	if client != nil {
+		s.gatewayHTTP = client
+	}
+	if starSenderURL != "" {
+		s.starSenderURL = starSenderURL
+	}
+	return s
 }
 
 // Send dispatches the job through the correct channel and returns the
@@ -41,6 +60,8 @@ func (s *Sender) Send(ctx context.Context, j Job) (string, error) {
 		return s.sendWhatsApp(ctx, j)
 	case "instagram", "messenger":
 		return s.sendMessenger(ctx, j)
+	case "onesender", "starsender":
+		return s.sendGateway(ctx, j)
 	}
 	return "", fmt.Errorf("unsupported channel_kind %q", j.ChannelKind)
 }

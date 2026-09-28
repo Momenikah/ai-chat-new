@@ -1,4 +1,6 @@
-package webhookemit
+// Package netguard builds SSRF-guarded HTTP clients for tenant-supplied
+// URLs (outbound webhooks, OneSender instances).
+package netguard
 
 import (
 	"context"
@@ -14,9 +16,9 @@ import (
 // This mirrors the API's internal/netguard package (the worker is a
 // separate module and cannot import it). Keep the two in sync.
 
-// errBlockedAddress is returned when a webhook resolves to an address
+// ErrBlockedAddress is returned when a webhook resolves to an address
 // tenants must not reach (loopback, private network, cloud metadata, …).
-var errBlockedAddress = errors.New("destination address is not allowed")
+var ErrBlockedAddress = errors.New("destination address is not allowed")
 
 var blockedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"),
@@ -31,7 +33,9 @@ var blockedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("2001:db8::/32"),
 }
 
-func isBlockedIP(ip netip.Addr) bool {
+// IsBlockedIP reports whether ip is loopback, private, link-local,
+// multicast or another special-purpose range.
+func IsBlockedIP(ip netip.Addr) bool {
 	if !ip.IsValid() {
 		return true
 	}
@@ -49,10 +53,10 @@ func isBlockedIP(ip netip.Addr) bool {
 	return false
 }
 
-// newHTTPClient builds the delivery client. Unless allowPrivate is set,
+// NewHTTPClient builds an HTTP client for tenant-supplied URLs. Unless allowPrivate is set,
 // every dialed address is checked after DNS resolution (defeating DNS
 // rebinding and redirects) and environment proxies are bypassed.
-func newHTTPClient(timeout time.Duration, allowPrivate bool) *http.Client {
+func NewHTTPClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if !allowPrivate {
@@ -62,8 +66,8 @@ func newHTTPClient(timeout time.Duration, allowPrivate bool) *http.Client {
 				return err
 			}
 			ip, err := netip.ParseAddr(host)
-			if err != nil || isBlockedIP(ip) {
-				return fmt.Errorf("%w: %s", errBlockedAddress, host)
+			if err != nil || IsBlockedIP(ip) {
+				return fmt.Errorf("%w: %s", ErrBlockedAddress, host)
 			}
 			return nil
 		}

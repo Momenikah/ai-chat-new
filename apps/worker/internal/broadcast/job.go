@@ -11,6 +11,8 @@ import "encoding/json"
 //   - "whatsapp"  → POST /{phone_number_id}/messages, messaging_product=whatsapp
 //   - "instagram" → POST /me/messages, messaging_product=instagram
 //   - "messenger" → POST /me/messages (no messaging_product)
+//   - "onesender" → POST {gateway_url}/api/v1/messages (unofficial WA)
+//   - "starsender"→ POST StarSender V3 /api/send (unofficial WA)
 type Job struct {
 	QueueRowID       string `json:"queue_row_id"`
 	RecipientID      string `json:"recipient_id"`
@@ -22,6 +24,7 @@ type Job struct {
 	PhoneNumberID    string `json:"phone_number_id,omitempty"`
 	MessagingProduct string `json:"messaging_product,omitempty"`
 	RecipientTo      string `json:"recipient_to"`
+	GatewayURL       string `json:"gateway_url,omitempty"`
 	Body             string `json:"body"`
 	RatePerMinute    int    `json:"rate_per_minute"`
 }

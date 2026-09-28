@@ -21,10 +21,12 @@ type Config struct {
 	MaxAttempts        int
 	WhatsAppAPIBaseURL string
 	MetaAPIBaseURL     string
+	StarSenderAPIURL   string
 
-	// WebhookAllowPrivateTargets lets outbound webhooks reach loopback /
-	// private-network hosts. Defaults to true only outside production;
-	// must match the API's setting.
+	// WebhookAllowPrivateTargets lets tenant-supplied URLs (outbound
+	// webhooks, OneSender instances) reach loopback / private-network
+	// hosts. Defaults to true only outside production; must match the
+	// API's setting.
 	WebhookAllowPrivateTargets bool
 }
 
@@ -47,6 +49,7 @@ func Load() *Config {
 		MaxAttempts:                getInt("WORKER_MAX_ATTEMPTS", 3),
 		WhatsAppAPIBaseURL:         getEnv("WHATSAPP_API_BASE_URL", "https://graph.facebook.com/v20.0"),
 		MetaAPIBaseURL:             getEnv("META_API_BASE_URL", "https://graph.facebook.com/v20.0"),
+		StarSenderAPIURL:           getEnv("STARSENDER_API_URL", "https://api.starsender.online/api/send"),
 		WebhookAllowPrivateTargets: getBool("WEBHOOK_ALLOW_PRIVATE_TARGETS", !isProd),
 	}
 }
