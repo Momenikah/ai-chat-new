@@ -30,9 +30,29 @@ const GUIDES: Record<ChannelType, string[]> = {
     "Subscribe page ke webhook: POST /<PAGE_ID>/subscribed_apps?subscribed_fields=messages.",
     "Connect di sini dengan Page ID + Page Access Token.",
   ],
+  onesender: [
+    "Siapkan instance OneSender Anda dan scan QR WhatsApp di dashboard OneSender.",
+    "Salin URL instance (mis. https://wa.domainanda.com) dan API key dari menu API.",
+    "Tambah channel → WhatsApp OneSender, isi URL instance + API key.",
+    "Salin Webhook URL yang muncul ke pengaturan webhook OneSender (pesan masuk).",
+    "Kirim pesan tes dari halaman channel. Channel menjadi connected saat kirim/terima berhasil.",
+  ],
+  starsender: [
+    "Login ke app.starsender.online, tambah device lalu scan QR WhatsApp.",
+    "Buka menu Device → salin Device API Key (bukan Account API Key).",
+    "Tambah channel → WhatsApp StarSender, isi Device API Key.",
+    "Salin Webhook URL yang muncul ke pengaturan webhook device di StarSender.",
+    "Kirim pesan tes dari halaman channel. Channel menjadi connected saat kirim/terima berhasil.",
+  ],
 };
 
-const ORDER: ChannelType[] = ["whatsapp", "instagram", "messenger"];
+const ORDER: ChannelType[] = [
+  "whatsapp",
+  "instagram",
+  "messenger",
+  "onesender",
+  "starsender",
+];
 
 export function ChannelSetupGuide() {
   const [open, setOpen] = useState(false);

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
-import type { Channel, ChannelType } from "@aichat/shared";
+import { isGatewayChannel, type Channel, type ChannelType } from "@aichat/shared";
 import { api, ApiException } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,6 +78,13 @@ const FIELDS: Record<ChannelType, Field[]> = {
       optional: true,
     },
   ],
+  onesender: [
+    { key: "base_url", label: "URL instance OneSender", placeholder: "https://wa.domainanda.com" },
+    { key: "api_key", label: "API Key", placeholder: "••••••••", secret: true },
+  ],
+  starsender: [
+    { key: "api_key", label: "Device API Key", placeholder: "••••••••", secret: true },
+  ],
 };
 
 export function ReconnectDialog({
@@ -114,6 +121,17 @@ export function ReconnectDialog({
           page_id: v("page_id") || undefined,
           page_access_token: v("page_access_token"),
           webhook_verify_token: v("webhook_verify_token") || undefined,
+        });
+      }
+      if (isGatewayChannel(channel.type)) {
+        // Re-keys this channel in place; the webhook URL is kept.
+        return api.gateway.connect(ws, {
+          provider: channel.type,
+          channel_id: channel.id,
+          name: channel.name,
+          api_key: v("api_key"),
+          base_url: v("base_url") || undefined,
+          phone_number: channel.external_id ?? undefined,
         });
       }
       return api.messenger.connect(ws, {

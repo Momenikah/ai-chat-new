@@ -269,6 +269,8 @@ export default function InboxPage() {
       whatsapp: 0,
       instagram: 0,
       messenger: 0,
+      onesender: 0,
+      starsender: 0,
     };
     for (const conv of allConversations) c[conv.channel_type]++;
     return c;

@@ -28,6 +28,8 @@ export function ContactsStats({ contacts, duplicatesCount }: ContactsStatsProps)
       whatsapp: 0,
       instagram: 0,
       messenger: 0,
+      onesender: 0,
+      starsender: 0,
     };
     let withoutChannel = 0;
     for (const c of contacts) {

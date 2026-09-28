@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
-import type { ChannelType } from "@aichat/shared";
+import { isGatewayChannel, type ChannelType } from "@aichat/shared";
 import { api, ApiException } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -49,9 +49,18 @@ const CREDENTIAL_FIELDS: Record<ChannelType, CredField[]> = {
     { key: "page_access_token", label: "Page Access Token", placeholder: "EAAG…", secret: true },
     { key: "app_secret", label: "App Secret", placeholder: "••••••••", secret: true },
   ],
+  // Gateways have a dedicated connect page (see TYPES click handler).
+  onesender: [],
+  starsender: [],
 };
 
-const TYPES: ChannelType[] = ["whatsapp", "instagram", "messenger"];
+const TYPES: ChannelType[] = [
+  "whatsapp",
+  "instagram",
+  "messenger",
+  "onesender",
+  "starsender",
+];
 
 export default function NewChannelPage() {
   const router = useRouter();
@@ -134,8 +143,9 @@ export default function NewChannelPage() {
         </p>
       </div>
 
-      {/* Type picker — Instagram & Messenger have dedicated connect pages */}
-      <div className="grid gap-3 sm:grid-cols-3">
+      {/* Type picker — Instagram, Messenger & WA gateways have dedicated
+          connect pages */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {TYPES.map((t) => {
           const meta = CHANNEL_META[t];
           const Icon = meta.icon;
@@ -147,6 +157,10 @@ export default function NewChannelPage() {
             }
             if (t === "messenger") {
               router.push("/dashboard/channels/messenger");
+              return;
+            }
+            if (isGatewayChannel(t)) {
+              router.push(`/dashboard/channels/wa-gateway?provider=${t}`);
               return;
             }
             setType(t);

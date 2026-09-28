@@ -28,6 +28,8 @@ import type {
   ConversationStatus,
   CreatedAPIKey,
   DashboardOverview,
+  GatewayInfo,
+  GatewayProvider,
   ImpersonateResult,
   InteractiveKind,
   InteractiveMessage,
@@ -729,6 +731,39 @@ export const api = {
         `/workspaces/${workspaceId}/interactive-messages/${id}`,
         { method: "DELETE" },
       ),
+  },
+
+  gateway: {
+    connect: (
+      workspaceId: string,
+      input: {
+        provider: GatewayProvider;
+        /** Re-key this existing channel instead of creating one. */
+        channel_id?: string;
+        name: string;
+        api_key: string;
+        base_url?: string;
+        phone_number?: string;
+      },
+    ) =>
+      request<GatewayInfo>(`/workspaces/${workspaceId}/channels/gateway/connect`, {
+        method: "POST",
+        body: input,
+      }),
+
+    info: (channelId: string) =>
+      request<GatewayInfo>(`/channels/${channelId}/gateway`),
+
+    rotateToken: (channelId: string) =>
+      request<GatewayInfo>(`/channels/${channelId}/gateway/rotate-token`, {
+        method: "POST",
+      }),
+
+    test: (channelId: string, input: { to: string; body: string }) =>
+      request<{ sent: boolean }>(`/channels/${channelId}/gateway/test`, {
+        method: "POST",
+        body: input,
+      }),
   },
 
   messenger: {

@@ -74,7 +74,8 @@ export default function ChannelsPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Channel</h1>
           <p className="text-sm text-muted-foreground">
-            Hubungkan WhatsApp, Instagram, dan Messenger ke workspace ini.
+            Hubungkan WhatsApp (Cloud API, OneSender, StarSender), Instagram,
+            dan Messenger ke workspace ini.
           </p>
         </div>
         {canManage && (
@@ -132,6 +133,8 @@ export default function ChannelsPage() {
             <option value="whatsapp">WhatsApp</option>
             <option value="instagram">Instagram</option>
             <option value="messenger">Messenger</option>
+            <option value="onesender">WA OneSender</option>
+            <option value="starsender">WA StarSender</option>
           </Select>
           <Select
             value={statusFilter}

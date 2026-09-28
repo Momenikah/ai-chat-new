@@ -1,4 +1,11 @@
-import { Instagram, MessageCircle, Send, type LucideIcon } from "lucide-react";
+import {
+  Instagram,
+  MessageCircle,
+  MessageSquareMore,
+  Send,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import type { ChannelStatus, ChannelType } from "@aichat/shared";
 
 /** Per-channel-type icon + accent colour. */
@@ -9,6 +16,8 @@ export const CHANNEL_META: Record<
   whatsapp: { icon: MessageCircle, label: "WhatsApp Business", color: "#25D366" },
   instagram: { icon: Instagram, label: "Instagram DM", color: "#E1306C" },
   messenger: { icon: Send, label: "Facebook Messenger", color: "#0084FF" },
+  onesender: { icon: MessageSquareMore, label: "WA OneSender", color: "#128C7E" },
+  starsender: { icon: Zap, label: "WA StarSender", color: "#F59E0B" },
 };
 
 type BadgeVariant = "success" | "warning" | "secondary" | "destructive";

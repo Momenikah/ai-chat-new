@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { AlertTriangle, KeyRound, Loader2, RefreshCw, Trash2 } from "lucide-react";
-import type { Channel, ChannelStatus } from "@aichat/shared";
+import { AlertTriangle, KeyRound, Loader2, RefreshCw, Trash2, Webhook } from "lucide-react";
+import { isGatewayChannel, type Channel, type ChannelStatus } from "@aichat/shared";
 import { api } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -142,6 +143,13 @@ export function ChannelCard({
               <RefreshCw className="h-3.5 w-3.5" />
               {channel.has_credentials ? "Reconnect / rotasi credential" : "Hubungkan credential"}
             </Button>
+            {isGatewayChannel(channel.type) && (
+              <Button variant="ghost" size="sm" className="w-full" asChild>
+                <Link href={`/dashboard/channels/wa-gateway?channel=${channel.id}`}>
+                  <Webhook className="h-3.5 w-3.5" /> Webhook URL &amp; kirim tes
+                </Link>
+              </Button>
+            )}
           </div>
         )}
       </Card>
