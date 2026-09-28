@@ -168,11 +168,12 @@ func (s *WhatsAppService) Connect(ctx context.Context, in ConnectInput) (*models
 	var channel *models.Channel
 	waCount := 0
 	for i := range list {
-		if list[i].Type == models.ChannelWhatsApp {
-			waCount++
-			if list[i].ExternalID != nil && *list[i].ExternalID == creds.PhoneNumberID {
-				channel = &list[i]
-			}
+		if list[i].Type.IsWhatsApp() {
+			waCount++ // gateway numbers share the plan's WhatsApp limit
+		}
+		if list[i].Type == models.ChannelWhatsApp &&
+			list[i].ExternalID != nil && *list[i].ExternalID == creds.PhoneNumberID {
+			channel = &list[i]
 		}
 	}
 

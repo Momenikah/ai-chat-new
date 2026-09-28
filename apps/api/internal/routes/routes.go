@@ -39,6 +39,7 @@ type Deps struct {
 	Public       *handlers.PublicHandler
 	Billing      *handlers.BillingHandler
 	Admin        *handlers.AdminHandler
+	Gateway      *handlers.GatewayHandler
 
 	AuthMW      *middleware.AuthMiddleware
 	WorkspaceMW *middleware.WorkspaceMiddleware
@@ -61,6 +62,10 @@ func Register(e *echo.Echo, d Deps) {
 	webhooks.POST("/instagram", d.Instagram.ReceiveWebhook)
 	webhooks.GET("/messenger", d.Messenger.VerifyWebhook)
 	webhooks.POST("/messenger", d.Messenger.ReceiveWebhook)
+	// Unofficial WhatsApp gateways don't sign webhooks: the per-channel
+	// token in the URL authenticates the caller.
+	webhooks.GET("/wa-gateway/:channelId/:token", d.Gateway.VerifyWebhook)
+	webhooks.POST("/wa-gateway/:channelId/:token", d.Gateway.ReceiveWebhook)
 
 	v1 := e.Group("/api/v1")
 	auth := d.AuthMW.RequireAuth()
@@ -110,6 +115,10 @@ func Register(e *echo.Echo, d Deps) {
 		d.Messenger.Info, ws.RequireWorkspaceRole(models.RoleViewer))
 	w.POST("/:id/channels/messenger/connect",
 		d.Messenger.Connect, ws.RequireWorkspaceRole(models.RoleAdmin))
+
+	// --- Unofficial WhatsApp gateways (OneSender / StarSender) --------
+	w.POST("/:id/channels/gateway/connect",
+		d.Gateway.Connect, ws.RequireWorkspaceRole(models.RoleAdmin))
 
 	// --- Inbox (workspace-scoped list) --------------------------------
 	w.GET("/:id/conversations",
@@ -254,6 +263,9 @@ func Register(e *echo.Echo, d Deps) {
 	ch.POST("/messenger/send", d.Messenger.Send)
 	ch.PATCH("/:id", d.Channel.Update, ws.RequireChannelRole(models.RoleAdmin))
 	ch.DELETE("/:id", d.Channel.Delete, ws.RequireChannelRole(models.RoleAdmin))
+	ch.GET("/:id/gateway", d.Gateway.Info, ws.RequireChannelRole(models.RoleAdmin))
+	ch.POST("/:id/gateway/rotate-token", d.Gateway.RotateToken, ws.RequireChannelRole(models.RoleAdmin))
+	ch.POST("/:id/gateway/test", d.Gateway.Test, ws.RequireChannelRole(models.RoleAdmin))
 
 	// --- Inbox (resolved via conversation id) -------------------------
 	conv := v1.Group("/conversations", auth)

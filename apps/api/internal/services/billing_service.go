@@ -270,7 +270,7 @@ func (s *BillingService) countWhatsAppNumbers(ctx context.Context, workspaceID s
 	}
 	n := 0
 	for _, c := range channels {
-		if c.Type == models.ChannelWhatsApp {
+		if c.Type.IsWhatsApp() { // official + unofficial gateways
 			n++
 		}
 	}

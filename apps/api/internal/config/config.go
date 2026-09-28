@@ -49,6 +49,10 @@ type Config struct {
 	MessengerVerifyToken string
 	MetaAppSecret        string
 
+	// StarSenderAPIURL is StarSender V3's send endpoint (override only for
+	// testing / a proxy).
+	StarSenderAPIURL string
+
 	// BroadcastQueueKey is the Redis list name shared with the worker.
 	BroadcastQueueKey string
 
@@ -128,6 +132,7 @@ func Load() *Config {
 		InstagramVerifyToken:       getEnv("INSTAGRAM_VERIFY_TOKEN", "dev-instagram-verify-token"),
 		MessengerVerifyToken:       getEnv("MESSENGER_VERIFY_TOKEN", "dev-messenger-verify-token"),
 		MetaAppSecret:              getEnv("META_APP_SECRET", ""),
+		StarSenderAPIURL:           getEnv("STARSENDER_API_URL", "https://api.starsender.online/api/send"),
 		BroadcastQueueKey:          getEnv("BROADCAST_QUEUE_KEY", "aichat:broadcast:queue"),
 		AIProvider:                 strings.ToLower(getEnv("AI_PROVIDER", "mock")),
 		AIAPIKey:                   getEnv("AI_API_KEY", ""),

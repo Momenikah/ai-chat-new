@@ -6,7 +6,7 @@
 CREATE TYPE member_role         AS ENUM ('OWNER', 'ADMIN', 'AGENT', 'VIEWER');
 CREATE TYPE member_status       AS ENUM ('active', 'invited', 'suspended');
 CREATE TYPE invitation_status   AS ENUM ('pending', 'accepted', 'revoked', 'expired');
-CREATE TYPE channel_type        AS ENUM ('whatsapp', 'instagram', 'messenger');
+CREATE TYPE channel_type        AS ENUM ('whatsapp', 'instagram', 'messenger', 'onesender', 'starsender');
 CREATE TYPE channel_status      AS ENUM ('disconnected', 'pending', 'connected', 'error');
 CREATE TYPE conversation_status AS ENUM ('open', 'pending', 'resolved', 'spam');
 CREATE TYPE message_direction   AS ENUM ('inbound', 'outbound');

@@ -7,6 +7,7 @@ import (
 
 	"github.com/aichat/api/internal/models"
 	"github.com/aichat/api/internal/repositories"
+	"github.com/aichat/api/internal/wagateway"
 )
 
 // Public-API service errors.
@@ -242,7 +243,14 @@ func (s *PublicAPIService) resolveTarget(ctx context.Context, workspaceID, conve
 		return nil, nil, ErrNoDeliverer
 	}
 
-	contact, err := s.findOrCreateContact(ctx, workspaceID, ch.Type, to)
+	source := ch.Type
+	if ch.Type.IsWAGateway() {
+		// Gateway channels share WhatsApp contacts with the official
+		// channel, keyed by bare international digits.
+		source = models.ChannelWhatsApp
+		to = wagateway.NormalizePhone(to)
+	}
+	contact, err := s.findOrCreateContact(ctx, workspaceID, source, to)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -265,6 +273,12 @@ func (s *PublicAPIService) findOrCreateContact(ctx context.Context, workspaceID 
 	if source == models.ChannelWhatsApp {
 		if byPhone, pErr := s.contacts.FindByPhone(ctx, workspaceID, externalID); pErr == nil {
 			return byPhone, nil
+		}
+		// Inbound WhatsApp contacts are stored as "+<digits>".
+		if !strings.HasPrefix(externalID, "+") {
+			if byPhone, pErr := s.contacts.FindByPhone(ctx, workspaceID, "+"+externalID); pErr == nil {
+				return byPhone, nil
+			}
 		}
 	}
 	src := source

@@ -24,6 +24,7 @@ import (
 	"github.com/aichat/api/internal/midtrans"
 	appmw "github.com/aichat/api/internal/middleware"
 	"github.com/aichat/api/internal/models"
+	"github.com/aichat/api/internal/netguard"
 	"github.com/aichat/api/internal/ratelimit"
 	"github.com/aichat/api/internal/realtime"
 	"github.com/aichat/api/internal/redis"
@@ -31,6 +32,7 @@ import (
 	"github.com/aichat/api/internal/routes"
 	"github.com/aichat/api/internal/services"
 	"github.com/aichat/api/internal/utils"
+	"github.com/aichat/api/internal/wagateway"
 	"github.com/aichat/api/internal/webhook"
 	"github.com/aichat/api/internal/whatsapp"
 )
@@ -133,6 +135,17 @@ func main() {
 		cfg.MessengerVerifyToken, cfg.MetaAppSecret, cfg.BaseURL,
 	)
 
+	// Unofficial WhatsApp gateways. OneSender instance URLs come from
+	// tenants, so the HTTP client is SSRF-guarded like outbound webhooks.
+	gatewayService := services.NewGatewayService(
+		channelRepo, contactRepo, conversationRepo, messageRepo,
+		memberRepo, webhookLogRepo, encryptor,
+		wagateway.NewClient(
+			netguard.NewHTTPClient(30*time.Second, cfg.WebhookAllowPrivateTargets),
+			cfg.StarSenderAPIURL),
+		hub, cfg.BaseURL, cfg.WebhookAllowPrivateTargets,
+	)
+
 	quickReplyService := services.NewQuickReplyService(quickReplyRepo)
 	templateService := services.NewTemplateService(pool, templateRepo)
 	interactiveService := services.NewInteractiveService(interactiveRepo)
@@ -145,6 +158,8 @@ func main() {
 		models.ChannelWhatsApp:  whatsappService,
 		models.ChannelInstagram: instagramService,
 		models.ChannelMessenger: messengerService,
+		models.ChannelOneSender:  gatewayService,
+		models.ChannelStarSender: gatewayService,
 	}
 	messageService := services.NewMessageService(
 		conversationRepo, messageRepo, channelRepo,
@@ -167,6 +182,7 @@ func main() {
 	whatsappService.SetAutoReplier(aiReplyService)
 	instagramService.SetAutoReplier(aiReplyService)
 	messengerService.SetAutoReplier(aiReplyService)
+	gatewayService.SetAutoReplier(aiReplyService)
 
 	// --- Developer API + Webhooks (Part 10) -------------------------------
 	// The async dispatcher delivers outbound webhooks off the request path
@@ -190,6 +206,7 @@ func main() {
 	whatsappService.SetWebhookDispatcher(webhookDispatcher)
 	instagramService.SetWebhookDispatcher(webhookDispatcher)
 	messengerService.SetWebhookDispatcher(webhookDispatcher)
+	gatewayService.SetWebhookDispatcher(webhookDispatcher)
 	contactService.SetWebhookDispatcher(webhookDispatcher)
 	conversationService.SetWebhookDispatcher(webhookDispatcher)
 
@@ -212,6 +229,7 @@ func main() {
 	apiKeyService.SetPlanEnforcer(planGuard)
 	webhookService.SetPlanEnforcer(planGuard)
 	whatsappService.SetPlanEnforcer(planGuard)
+	gatewayService.SetPlanEnforcer(planGuard)
 	messageService.SetPlanEnforcer(planGuard)
 	publicAPIService.SetPlanEnforcer(planGuard)
 
@@ -259,6 +277,7 @@ func main() {
 		Public:       handlers.NewPublicHandler(publicAPIService),
 		Billing:      handlers.NewBillingHandler(billingService),
 		Admin:        handlers.NewAdminHandler(adminService),
+		Gateway:      handlers.NewGatewayHandler(gatewayService),
 		AuthMW:       appmw.NewAuthMiddleware(tokenManager),
 		WorkspaceMW: appmw.NewWorkspaceMiddleware(
 			memberRepo, channelRepo, conversationRepo, contactRepo,

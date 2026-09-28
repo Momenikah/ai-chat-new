@@ -9,16 +9,34 @@ const (
 	ChannelWhatsApp  ChannelType = "whatsapp"
 	ChannelInstagram ChannelType = "instagram"
 	ChannelMessenger ChannelType = "messenger"
+
+	// Unofficial WhatsApp gateways (see internal/wagateway).
+	ChannelOneSender  ChannelType = "onesender"
+	ChannelStarSender ChannelType = "starsender"
 )
 
 // Valid reports whether t is a supported channel type.
 func (t ChannelType) Valid() bool {
 	switch t {
-	case ChannelWhatsApp, ChannelInstagram, ChannelMessenger:
+	case ChannelWhatsApp, ChannelInstagram, ChannelMessenger,
+		ChannelOneSender, ChannelStarSender:
 		return true
 	default:
 		return false
 	}
+}
+
+// IsWhatsApp reports whether the channel delivers to WhatsApp phone
+// numbers — the official Cloud API or an unofficial gateway. These share
+// phone-based contact routing and the plan's whatsapp_numbers limit.
+func (t ChannelType) IsWhatsApp() bool {
+	return t == ChannelWhatsApp || t.IsWAGateway()
+}
+
+// IsWAGateway reports whether the channel is an unofficial WhatsApp
+// gateway (OneSender / StarSender).
+func (t ChannelType) IsWAGateway() bool {
+	return t == ChannelOneSender || t == ChannelStarSender
 }
 
 // ChannelStatus is the connection state of a channel.

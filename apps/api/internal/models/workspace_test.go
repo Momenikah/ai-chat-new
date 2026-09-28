@@ -16,3 +16,21 @@ func TestMemberRoleAtLeast(t *testing.T) {
 		t.Error("unknown role granted access")
 	}
 }
+
+func TestChannelTypeClassification(t *testing.T) {
+	for _, tc := range []struct {
+		t                    ChannelType
+		valid, whatsapp, gwy bool
+	}{
+		{ChannelWhatsApp, true, true, false},
+		{ChannelOneSender, true, true, true},
+		{ChannelStarSender, true, true, true},
+		{ChannelInstagram, true, false, false},
+		{ChannelMessenger, true, false, false},
+		{"telegram", false, false, false},
+	} {
+		if tc.t.Valid() != tc.valid || tc.t.IsWhatsApp() != tc.whatsapp || tc.t.IsWAGateway() != tc.gwy {
+			t.Errorf("%s: Valid=%v IsWhatsApp=%v IsWAGateway=%v", tc.t, tc.t.Valid(), tc.t.IsWhatsApp(), tc.t.IsWAGateway())
+		}
+	}
+}

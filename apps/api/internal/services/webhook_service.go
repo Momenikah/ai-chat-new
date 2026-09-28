@@ -189,14 +189,25 @@ func (s *WebhookService) Test(ctx context.Context, workspaceID, endpointID strin
 /* ----------------------------- validation ----------------------------- */
 
 func (s *WebhookService) validateURL(raw string) error {
+	switch err := checkOutboundURL(raw, s.allowPrivate); {
+	case errors.Is(err, netguard.ErrBlockedAddress):
+		return ErrPrivateWebhookURL
+	case err != nil:
+		return ErrInvalidWebhookURL
+	}
+	return nil
+}
+
+// checkOutboundURL validates a tenant-supplied URL the API will call:
+// http(s) with a host, and — unless allowPrivate — not pointing at
+// loopback/private/metadata addresses (netguard.ErrBlockedAddress).
+func checkOutboundURL(raw string, allowPrivate bool) error {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return ErrInvalidWebhookURL
 	}
-	if !s.allowPrivate {
-		if err := netguard.ValidateURL(raw); err != nil {
-			return ErrPrivateWebhookURL
-		}
+	if !allowPrivate {
+		return netguard.ValidateURL(raw)
 	}
 	return nil
 }

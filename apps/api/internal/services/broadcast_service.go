@@ -17,6 +17,7 @@ import (
 	"github.com/aichat/api/internal/messenger"
 	"github.com/aichat/api/internal/models"
 	"github.com/aichat/api/internal/repositories"
+	"github.com/aichat/api/internal/wagateway"
 	"github.com/aichat/api/internal/whatsapp"
 )
 
@@ -41,6 +42,7 @@ type BroadcastJob struct {
 	PhoneNumberID   string `json:"phone_number_id"`  // whatsapp routing id
 	MessagingProduct string `json:"messaging_product"` // "instagram" or ""
 	RecipientTo     string `json:"recipient_to"`     // phone for WA, PSID/IGSID otherwise
+	GatewayURL      string `json:"gateway_url,omitempty"` // OneSender instance URL
 	Body            string `json:"body"`
 	RatePerMinute   int    `json:"rate_per_minute"`
 }
@@ -411,6 +413,7 @@ type credPair struct {
 	PhoneNumberID    string
 	MessagingProduct string
 	Kind             string
+	GatewayURL       string
 }
 
 func (s *BroadcastService) buildJobBase(ctx context.Context, channel *models.Channel) (credPair, error) {
@@ -445,6 +448,17 @@ func (s *BroadcastService) buildJobBase(ctx context.Context, channel *models.Cha
 			Kind:        string(models.ChannelMessenger),
 		}, nil
 	}
+	if channel.Type.IsWAGateway() {
+		creds, err := wagateway.LoadCredentials(ctx, s.channels, s.encryptor, channel.ID)
+		if err != nil {
+			return credPair{}, fmt.Errorf("load %s creds: %w", channel.Type, err)
+		}
+		return credPair{
+			AccessToken: creds.APIKey,
+			GatewayURL:  creds.BaseURL,
+			Kind:        string(channel.Type),
+		}, nil
+	}
 	return credPair{}, fmt.Errorf("unsupported channel type %q", channel.Type)
 }
 
@@ -457,12 +471,12 @@ func (s *BroadcastService) enqueueJob(
 	body string,
 ) error {
 	to := ""
-	switch channel.Type {
-	case models.ChannelWhatsApp:
+	switch {
+	case channel.Type.IsWhatsApp():
 		if rec.Phone != nil {
 			to = *rec.Phone
 		}
-	case models.ChannelInstagram, models.ChannelMessenger:
+	case channel.Type == models.ChannelInstagram, channel.Type == models.ChannelMessenger:
 		if rec.ExternalID != nil {
 			to = *rec.ExternalID
 		}
@@ -484,6 +498,7 @@ func (s *BroadcastService) enqueueJob(
 		AccessToken:      cred.AccessToken,
 		PhoneNumberID:    cred.PhoneNumberID,
 		MessagingProduct: cred.MessagingProduct,
+		GatewayURL:       cred.GatewayURL,
 		RecipientTo:      to,
 		Body:             body,
 		RatePerMinute:    camp.RatePerMinute,

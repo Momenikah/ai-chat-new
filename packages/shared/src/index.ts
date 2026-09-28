@@ -113,7 +113,21 @@ export interface TeamListing {
 
 /* ------------------------------ Channels ------------------------------- */
 
-export type ChannelType = "whatsapp" | "instagram" | "messenger";
+export type ChannelType =
+  | "whatsapp"
+  | "instagram"
+  | "messenger"
+  | "onesender"
+  | "starsender";
+
+/** Unofficial WhatsApp gateways (driven through WhatsApp Web). */
+export type GatewayProvider = "onesender" | "starsender";
+
+export const GATEWAY_PROVIDERS: GatewayProvider[] = ["onesender", "starsender"];
+
+export function isGatewayChannel(type: ChannelType): type is GatewayProvider {
+  return type === "onesender" || type === "starsender";
+}
 
 export type ChannelStatus =
   | "disconnected"
@@ -139,7 +153,19 @@ export const CHANNEL_LABELS: Record<ChannelType, string> = {
   whatsapp: "WhatsApp Business API",
   instagram: "Instagram DM",
   messenger: "Facebook Messenger",
+  onesender: "WhatsApp (OneSender)",
+  starsender: "WhatsApp (StarSender)",
 };
+
+/** Setup details of a gateway channel. The API key is never returned. */
+export interface GatewayInfo {
+  channel: Channel;
+  provider: GatewayProvider;
+  base_url?: string;
+  phone_number?: string;
+  webhook_url: string;
+  api_key_hint: string;
+}
 
 /* ------------------------------- Inbox --------------------------------- */
 
