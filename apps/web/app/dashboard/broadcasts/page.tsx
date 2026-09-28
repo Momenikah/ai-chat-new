@@ -66,7 +66,7 @@ export default function BroadcastsPage() {
     enabled: Boolean(workspaceId),
   });
 
-  const items = data?.broadcasts ?? [];
+  const items = useMemo(() => data?.broadcasts ?? [], [data]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<StatusFilter, number> = {

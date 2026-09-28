@@ -78,7 +78,10 @@ export default function SegmentsPage() {
     enabled: Boolean(workspaceId),
   });
 
-  const segments = segmentsQuery.data?.segments ?? [];
+  const segments = useMemo(
+    () => segmentsQuery.data?.segments ?? [],
+    [segmentsQuery.data],
+  );
   const tags = tagsQuery.data?.tags ?? [];
 
   const filteredAndSorted = useMemo(() => {

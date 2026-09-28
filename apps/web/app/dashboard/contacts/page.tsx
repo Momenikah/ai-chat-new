@@ -81,7 +81,10 @@ export default function ContactsPage() {
   });
 
   const tags = tagsQuery.data?.tags ?? [];
-  const allContacts = contactsQuery.data?.contacts ?? [];
+  const allContacts = useMemo(
+    () => contactsQuery.data?.contacts ?? [],
+    [contactsQuery.data],
+  );
   const duplicates = duplicatesQuery.data?.contacts ?? [];
 
   /* --------------------- Quick filter + sort --------------------------- */

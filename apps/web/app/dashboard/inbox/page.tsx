@@ -247,7 +247,10 @@ export default function InboxPage() {
 
   /* ------------------------------ Derived ------------------------------ */
 
-  const allConversations = conversationsQuery.data?.conversations ?? [];
+  const allConversations = useMemo(
+    () => conversationsQuery.data?.conversations ?? [],
+    [conversationsQuery.data],
+  );
 
   const counts = useMemo(() => {
     const c = { all: 0, mine: 0, unassigned: 0, unread: 0, resolved: 0 };
